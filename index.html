@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Formatwerkstatt — Lokaler Dateikonverter</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+<style>
+  :root{
+    --paper:#F2F3EF;
+    --sheet:#FFFFFF;
+    --ink:#17181A;
+    --muted:#6C6F67;
+    --line:#D8DAD2;
+    --accent:#2038C8;
+    --accent-soft:#E7EAFB;
+    --error:#B3271E;
+    --ok:#1D6B3C;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.5;
+    padding:28px 16px 80px;
+  }
+  .wrap{max-width:880px;margin:0 auto}
+
+  /* ---------- Kopf ---------- */
+  header{border-bottom:3px solid var(--ink);padding-bottom:18px;margin-bottom:28px}
+  .eyebrow{
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:8px;
+    display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;
+  }
+  h1{font-size:clamp(28px,6vw,44px);font-weight:700;letter-spacing:-.02em;line-height:1.05}
+  h1 .thin{font-weight:300}
+  .subline{margin-top:10px;color:var(--muted);max-width:60ch}
+  .subline strong{color:var(--ink);font-weight:600}
+
+  /* ---------- Feld-Blöcke (Formular-Logik) ---------- */
+  .feld{margin-bottom:30px}
+  .feld-kopf{
+    display:flex;align-items:baseline;gap:10px;margin-bottom:12px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+  }
+  .feld-kopf::after{content:"";flex:1;border-top:1px solid var(--line);transform:translateY(-3px)}
+  .feld-nr{background:var(--ink);color:#fff;padding:2px 7px;border-radius:2px}
+
+  /* ---------- Ablagefläche: DIN-Blatt mit Schnittmarken ---------- */
+  .drop{
+    position:relative;background:var(--sheet);
+    border:1px solid var(--line);
+    padding:44px 24px;text-align:center;cursor:pointer;
+    transition:background .15s ease,border-color .15s ease;
+  }
+  .drop:hover,.drop:focus-visible{border-color:var(--accent)}
+  .drop.dragover{background:var(--accent-soft);border-color:var(--accent)}
+  .drop:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  .mark{position:absolute;width:14px;height:14px;pointer-events:none}
+  .mark::before,.mark::after{content:"";position:absolute;background:var(--ink)}
+  .mark::before{width:14px;height:1px}
+  .mark::after{width:1px;height:14px}
+  .m-tl{top:-7px;left:-7px}.m-tr{top:-7px;right:-7px}
+  .m-bl{bottom:-7px;left:-7px}.m-br{bottom:-7px;right:-7px}
+  .m-tl::before,.m-bl::before{left:0}.m-tr::before,.m-br::before{right:0}
+  .m-tl::after,.m-tr::after{top:0}.m-bl::after,.m-br::after{bottom:0}
+  .drop-title{font-size:18px;font-weight:600;margin-bottom:6px}
+  .drop-sub{color:var(--muted);font-size:13px}
+  .drop-formats{margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.06em}
+  input[type=file]{display:none}
+
+  /* ---------- Dateizeilen ---------- */
+  .datei{
+    background:var(--sheet);border:1px solid var(--line);border-top:none;
+    padding:14px 16px;
+  }
+  .datei:first-of-type{border-top:1px solid var(--line)}
+  .datei-kopf{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .typ{
+    font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+    padding:3px 7px;border:1px solid var(--ink);border-radius:2px;white-space:nowrap;
+  }
+  .typ.pdf{background:var(--ink);color:#fff}
+  .typ.bild{background:var(--accent);border-color:var(--accent);color:#fff}
+  .typ.docx,.typ.odt{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .typ.tab{background:var(--ok);border-color:var(--ok);color:#fff}
+  .name{font-weight:600;word-break:break-all;flex:1;min-width:140px}
+  .groesse{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
+  .entfernen{
+    border:none;background:none;color:var(--muted);cursor:pointer;
+    font-size:18px;line-height:1;padding:4px 8px;border-radius:2px;
+  }
+  .entfernen:hover{color:var(--error)}
+  .entfernen:focus-visible{outline:2px solid var(--accent)}
+
+  .ziele{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .btn{
+    font-family:var(--sans);font-size:13px;font-weight:600;
+    border:1px solid var(--ink);background:var(--sheet);color:var(--ink);
+    padding:9px 14px;border-radius:2px;cursor:pointer;
+    transition:background .12s ease,color .12s ease;
+    min-height:40px;
+  }
+  .btn:hover{background:var(--ink);color:#fff}
+  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .btn:disabled{opacity:.45;cursor:wait}
+  .btn.primaer{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primaer:hover{background:#16279A;border-color:#16279A}
+
+  .status{margin-top:10px;font-size:13px;color:var(--muted)}
+  .status.fehler{color:var(--error)}
+  .status.laeuft::before{content:"";display:inline-block;width:9px;height:9px;margin-right:7px;
+    border:2px solid var(--accent);border-top-color:transparent;border-radius:50%;
+    animation:dreh .7s linear infinite;vertical-align:-1px}
+  @keyframes dreh{to{transform:rotate(360deg)}}
+
+  .ergebnis{
+    margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    padding:10px 12px;background:var(--accent-soft);border-left:3px solid var(--accent);
+  }
+  .stempel{
+    font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--ok);
+    border:1.5px solid var(--ok);padding:2px 7px;border-radius:2px;
+    transform:rotate(-3deg);animation:stempeln .25s ease-out;
+  }
+  @keyframes stempeln{from{transform:rotate(-3deg) scale(1.6);opacity:0}to{transform:rotate(-3deg) scale(1);opacity:1}}
+  .ergebnis a{color:var(--accent);font-weight:600;word-break:break-all}
+
+  /* ---------- Sammelaktionen ---------- */
+  .sammel{display:flex;flex-wrap:wrap;gap:10px}
+  .hinweis{
+    margin-top:26px;padding:14px 16px;border:1px dashed var(--line);
+    font-size:13px;color:var(--muted);background:var(--sheet);
+  }
+  .hinweis strong{color:var(--ink)}
+  .leer{color:var(--muted);font-size:13px;padding:6px 2px}
+  footer{margin-top:44px;border-top:1px solid var(--line);padding-top:12px;
+    font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+    display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px}
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+  }
+  @media (max-width:520px){
+    body{padding:18px 10px 60px}
+    .drop{padding:32px 14px}
+    .btn{flex:1 1 auto}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow"><span>Blatt 1 · Dateiumwandlung</span><span>läuft lokal · kein Upload</span></div>
+    <h1>Format<span class="thin">werkstatt</span></h1>
+    <p class="subline">PDF, Word, Excel, PowerPoint, Bilder und mehr ineinander umwandeln — <strong>direkt im Browser</strong>. Keine Datei verlässt dieses Gerät. Nur die einmalige OCR-Spracherkennung wird bei Bedarf nachgeladen.</p>
+  </header>
+
+  <!-- FELD 1: EINGABE -->
+  <section class="feld">
+    <div class="feld-kopf"><span class="feld-nr">1</span><span>Eingabe — Dateien ablegen</span></div>
+    <div class="drop" id="drop" role="button" tabindex="0" aria-label="Dateien auswählen oder hierher ziehen">
+      <span class="mark m-tl"></span><span class="mark m-tr"></span>
+      <span class="mark m-bl"></span><span class="mark m-br"></span>
+      <div class="drop-title">Dateien hierher ziehen oder tippen</div>
+      <div class="drop-sub">Mehrfachauswahl möglich</div>
+      <div class="drop-formats">PDF · DOCX · XLSX/XLS · CSV · PPTX · ODT · RTF · TXT/MD · JPG · PNG · WEBP · GIF · BMP</div>
+    </div>
+    <input type="file" id="fileInput" multiple
+      accept=".pdf,.docx,.xlsx,.xls,.csv,.tsv,.pptx,.odt,.rtf,.txt,.md,.markdown,.jpg,.jpeg,.png,.webp,.gif,.bmp,application/pdf,image/*">
+  </section>
+
+  <!-- FELD 2: UMWANDLUNG -->
+  <section class="feld">
+    <div class="feld-kopf"><span class="feld-nr">2</span><span>Umwandlung — Ziel wählen</span></div>
+    <div id="fileList"><p class="leer">Noch keine Dateien. Lege oben etwas ab — pro Datei erscheinen dann die möglichen Zielformate.</p></div>
+  </section>
+
+  <!-- FELD 3: SAMMELAKTIONEN -->
+  <section class="feld" id="sammelFeld" hidden>
+    <div class="feld-kopf"><span class="feld-nr">3</span><span>Sammelaktionen</span></div>
+    <div class="sammel" id="sammelAktionen"></div>
+    <div class="status" id="sammelStatus"></div>
+    <div id="sammelErgebnis"></div>
+  </section>
+
+  <div class="hinweis">
+    <strong>Gut zu wissen:</strong> PDF → Word übernimmt Text mit Absätzen und Überschriften; exaktes Seitenlayout (Spalten, Bilder, Tabellen) kann abweichen. Für gescannte PDFs und Fotos gibt es jetzt die <strong>OCR-Texterkennung</strong> (Deutsch + Englisch) — beim ersten Einsatz lädt sie einmalig ihr Sprachmodell (~15 MB), danach läuft alles lokal. Excel → PDF setzt jedes Tabellenblatt als saubere Tabelle; CSV mit Semikolon oder Komma wird automatisch erkannt. Word → PDF überträgt Text, Überschriften und Fettdruck; eingebettete Bilder werden nicht übernommen. Alte <em>.doc</em>- und <em>.ppt</em>-Dateien bitte einmal als <em>.docx</em>/<em>.pptx</em> speichern.
+  </div>
+
+  <footer><span>Formatwerkstatt v2.1</span><span>PDF.js · pdf-lib · jsPDF · JSZip · SheetJS · Tesseract</span></footer>
+</div>
+
+<script>
+/* =============================================================
+   Formatwerkstatt v2 — lokaler Dateikonverter
+   PDF · Word · Excel · CSV · PowerPoint · ODT · RTF · Text · Bilder · OCR
+   ============================================================= */
+"use strict";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const { PDFDocument } = PDFLib;
+const { jsPDF } = window.jspdf;
+
+/* ---------- Zustand ---------- */
+let dateien = [];       // {id, file, kind}
+let naechsteId = 1;
+
+/* ---------- DOM ---------- */
+const drop = document.getElementById("drop");
+const fileInput = document.getElementById("fileInput");
+const fileList = document.getElementById("fileList");
+const sammelFeld = document.getElementById("sammelFeld");
+const sammelAktionen = document.getElementById("sammelAktionen");
+const sammelStatus = document.getElementById("sammelStatus");
+const sammelErgebnis = document.getElementById("sammelErgebnis");
+
+/* ---------- Eingabe ---------- */
+drop.addEventListener("click", () => fileInput.click());
+drop.addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+});
+fileInput.addEventListener("change", () => { addFiles(fileInput.files); fileInput.value = ""; });
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.add("dragover");
+}));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.remove("dragover");
+}));
+drop.addEventListener("drop", e => addFiles(e.dataTransfer.files));
+
+function erkenneTyp(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".pdf") || file.type === "application/pdf") return "pdf";
+  if (name.endsWith(".docx")) return "docx";
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) return "xlsx";
+  if (name.endsWith(".csv") || name.endsWith(".tsv")) return "csv";
+  if (name.endsWith(".pptx")) return "pptx";
+  if (name.endsWith(".odt")) return "odt";
+  if (name.endsWith(".rtf")) return "rtf";
+  if (/\.(txt|md|markdown)$/.test(name)) return "txt";
+  if (name.endsWith(".doc") || name.endsWith(".ppt")) return "alt";
+  if (/\.(jpe?g|png|webp|gif|bmp)$/.test(name) || file.type.startsWith("image/")) return "bild";
+  return "unbekannt";
+}
+
+function addFiles(list) {
+  for (const f of list) {
+    dateien.push({ id: naechsteId++, file: f, kind: erkenneTyp(f) });
+  }
+  renderList();
+}
+
+function entferne(id) {
+  dateien = dateien.filter(d => d.id !== id);
+  renderList();
+}
+
+/* ---------- Anzeige ---------- */
+function fmtGroesse(b) {
+  if (b < 1024) return b + " B";
+  if (b < 1048576) return (b/1024).toFixed(1) + " KB";
+  return (b/1048576).toFixed(1) + " MB";
+}
+
+const TYP_LABEL = { pdf:"PDF", docx:"DOCX", xlsx:"EXCEL", csv:"CSV", pptx:"PPTX",
+  odt:"ODT", rtf:"RTF", txt:"TEXT", bild:"BILD", alt:"ALT", unbekannt:"?" };
+const TYP_KLASSE = { pdf:"pdf", bild:"bild", docx:"docx", odt:"odt", xlsx:"tab", csv:"tab" };
+
+const ZIELE = {
+  bild: [
+    { label: "→ PDF",  fn: (d,row) => bildZuPdf(d,row) },
+    { label: "→ PNG",  fmt: "png",  fn: (d,row) => bildZuBild(d,row,"png") },
+    { label: "→ JPG",  fmt: "jpg",  fn: (d,row) => bildZuBild(d,row,"jpg") },
+    { label: "→ WebP", fmt: "webp", fn: (d,row) => bildZuBild(d,row,"webp") },
+    { label: "→ Text per OCR", fn: (d,row) => bildZuTextOcr(d,row) },
+  ],
+  pdf: [
+    { label: "→ Word (.docx)", primaer: true, fn: (d,row) => pdfZuDocx(d,row) },
+    { label: "→ Bilder (PNG)", fn: (d,row) => pdfZuBilder(d,row) },
+    { label: "→ Text (.txt)",  fn: (d,row) => pdfZuText(d,row) },
+    { label: "→ Word per OCR (Scans)", fn: (d,row) => pdfOcr(d,row,"docx") },
+    { label: "→ Text per OCR (Scans)", fn: (d,row) => pdfOcr(d,row,"txt") },
+  ],
+  docx: [
+    { label: "→ PDF", primaer: true, fn: (d,row) => docxZuPdf(d,row) },
+    { label: "→ Text (.txt)", fn: (d,row) => docxZuText(d,row) },
+  ],
+  xlsx: [
+    { label: "→ PDF (Tabelle)", primaer: true, fn: (d,row) => excelZuPdf(d,row) },
+    { label: "→ CSV", fn: (d,row) => excelZuCsv(d,row) },
+  ],
+  csv: [
+    { label: "→ Excel (.xlsx)", primaer: true, fn: (d,row) => csvZuExcel(d,row) },
+    { label: "→ PDF (Tabelle)", fn: (d,row) => excelZuPdf(d,row) },
+  ],
+  pptx: [
+    { label: "→ PDF (Textfassung)", primaer: true, fn: (d,row) => pptxZuPdf(d,row) },
+    { label: "→ Text (.txt)", fn: (d,row) => pptxZuText(d,row) },
+  ],
+  odt: [
+    { label: "→ Word (.docx)", primaer: true, fn: (d,row) => odtZuDocx(d,row) },
+    { label: "→ PDF", fn: (d,row) => odtZuPdf(d,row) },
+    { label: "→ Text (.txt)", fn: (d,row) => odtZuText(d,row) },
+  ],
+  rtf: [
+    { label: "→ Text (.txt)", primaer: true, fn: (d,row) => rtfZuTextDatei(d,row) },
+    { label: "→ PDF", fn: (d,row) => rtfZuPdf(d,row) },
+  ],
+  txt: [
+    { label: "→ PDF", primaer: true, fn: (d,row) => txtZuPdf(d,row) },
+    { label: "→ Word (.docx)", fn: (d,row) => txtZuDocx(d,row) },
+  ],
+};
+
+function renderList() {
+  fileList.innerHTML = "";
+  if (dateien.length === 0) {
+    fileList.innerHTML = '<p class="leer">Noch keine Dateien. Lege oben etwas ab — pro Datei erscheinen dann die möglichen Zielformate.</p>';
+  }
+  for (const d of dateien) {
+    const row = document.createElement("div");
+    row.className = "datei";
+
+    const kopf = document.createElement("div");
+    kopf.className = "datei-kopf";
+    const typ = document.createElement("span");
+    typ.className = "typ " + (TYP_KLASSE[d.kind] || "");
+    typ.textContent = TYP_LABEL[d.kind] || "?";
+    const name = document.createElement("span");
+    name.className = "name"; name.textContent = d.file.name;
+    const gr = document.createElement("span");
+    gr.className = "groesse"; gr.textContent = fmtGroesse(d.file.size);
+    const x = document.createElement("button");
+    x.className = "entfernen"; x.textContent = "×";
+    x.setAttribute("aria-label", "Datei entfernen");
+    x.addEventListener("click", () => entferne(d.id));
+    kopf.append(typ, name, gr, x);
+    row.appendChild(kopf);
+
+    if (d.kind === "alt") {
+      const s = document.createElement("div");
+      s.className = "status fehler";
+      s.textContent = "Altes Binärformat — bitte in Word/PowerPoint einmal als .docx bzw. .pptx speichern, dann klappt die Umwandlung.";
+      row.appendChild(s);
+    } else if (d.kind === "unbekannt") {
+      const s = document.createElement("div");
+      s.className = "status fehler";
+      s.textContent = "Dieses Format kenne ich nicht. Unterstützt: PDF, DOCX, XLSX, CSV, PPTX, ODT, RTF, TXT/MD und Bilder.";
+      row.appendChild(s);
+    } else {
+      const ziele = document.createElement("div");
+      ziele.className = "ziele";
+      const eigenesFmt = d.file.name.toLowerCase().replace(/^.*\./, "").replace("jpeg","jpg");
+      for (const z of ZIELE[d.kind]) {
+        if (z.fmt && z.fmt === eigenesFmt) continue;
+        const b = document.createElement("button");
+        b.className = "btn" + (z.primaer ? " primaer" : "");
+        b.textContent = z.label;
+        b.addEventListener("click", () => laufend(b, () => z.fn(d, row)));
+        ziele.appendChild(b);
+      }
+      row.appendChild(ziele);
+    }
+    fileList.appendChild(row);
+  }
+  renderSammel();
+}
+
+function renderSammel() {
+  const bilder = dateien.filter(d => d.kind === "bild");
+  const pdfs = dateien.filter(d => d.kind === "pdf");
+  sammelAktionen.innerHTML = "";
+  const zeigen = bilder.length >= 2 || pdfs.length >= 2;
+  sammelFeld.hidden = !zeigen;
+  if (!zeigen) return;
+
+  if (bilder.length >= 2) {
+    const b = document.createElement("button");
+    b.className = "btn primaer";
+    b.textContent = "Alle " + bilder.length + " Bilder → ein PDF";
+    b.addEventListener("click", () => laufend(b, () => bilderZuEinemPdf(bilder)));
+    sammelAktionen.appendChild(b);
+  }
+  if (pdfs.length >= 2) {
+    const b = document.createElement("button");
+    b.className = "btn";
+    b.textContent = pdfs.length + " PDFs zusammenführen";
+    b.addEventListener("click", () => laufend(b, () => pdfsZusammen(pdfs)));
+    sammelAktionen.appendChild(b);
+  }
+}
+
+async function laufend(btn, fn) {
+  btn.disabled = true;
+  try { await fn(); }
+  finally { btn.disabled = false; }
+}
+
+/* ---------- Status & Ergebnis ---------- */
+function setStatus(row, text, art) {
+  let s = row.querySelector(":scope > .status.dyn");
+  if (!s) { s = document.createElement("div"); s.className = "status dyn"; row.appendChild(s); }
+  s.className = "status dyn" + (art ? " " + art : "");
+  s.textContent = text || "";
+  s.hidden = !text;
+}
+
+function fehlermeldung(err) {
+  return (err && err.message) || "Unbekannter Fehler.";
+}
+
+function zeigeErgebnis(row, blob, dateiname, zusatz) {
+  setStatus(row, "");
+  const e = document.createElement("div");
+  e.className = "ergebnis";
+  const st = document.createElement("span");
+  st.className = "stempel"; st.textContent = "FERTIG";
+  e.appendChild(st);
+
+  // iPhone/iPad: klassische Downloads werden dort oft blockiert.
+  // Deshalb zuerst das native Teilen-Menü anbieten („In Dateien sichern“).
+  const datei = new File([blob], dateiname, { type: blob.type || "application/octet-stream" });
+  const kannTeilen = !!(navigator.canShare && navigator.canShare({ files: [datei] }) && navigator.share);
+
+  if (kannTeilen) {
+    const b = document.createElement("button");
+    b.className = "btn primaer";
+    b.textContent = "Sichern / Teilen";
+    b.addEventListener("click", async () => {
+      try { await navigator.share({ files: [datei] }); }
+      catch (err) { /* Abbruch durch Nutzer — kein Fehler */ }
+    });
+    e.appendChild(b);
+  }
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = dateiname;
+  a.textContent = kannTeilen ? dateiname + " (oder klassisch herunterladen)" : dateiname + " herunterladen";
+  e.appendChild(a);
+
+  if (zusatz) {
+    const z = document.createElement("span");
+    z.style.cssText = "font-size:12px;color:var(--muted)";
+    z.textContent = zusatz;
+    e.appendChild(z);
+  }
+  row.appendChild(e);
+  if (!kannTeilen) a.click(); // nur dort automatisch, wo Downloads zuverlässig gehen
+}
+
+function basisname(name) { return name.replace(/\.[^.]+$/, ""); }
+
+function median(arr) {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)];
+}
+
+/* =============================================================
+   Gemeinsame Bausteine: Absätze → DOCX / → PDF, Text → Absätze
+   ============================================================= */
+function xmlEscape(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;").replace(/'/g, "&apos;")
+          .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+}
+
+async function baueDocx(absaetze) {
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+</Types>`);
+
+  zip.file("_rels/.rels",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+
+  zip.file("word/_rels/document.xml.rels",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`);
+
+  zip.file("word/styles.xml",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+<w:name w:val="Normal"/>
+<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="22"/></w:rPr>
+<w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr>
+</w:style>
+<w:style w:type="paragraph" w:styleId="Heading1">
+<w:name w:val="heading 1"/><w:basedOn w:val="Normal"/>
+<w:pPr><w:spacing w:before="240" w:after="120"/><w:outlineLvl w:val="0"/></w:pPr>
+<w:rPr><w:b/><w:sz w:val="32"/></w:rPr>
+</w:style>
+</w:styles>`);
+
+  let body = "";
+  for (const a of absaetze) {
+    const stil = a.heading ? '<w:pPr><w:pStyle w:val="Heading1"/></w:pPr>' : "";
+    body += `<w:p>${stil}<w:r><w:t xml:space="preserve">${xmlEscape(a.text)}</w:t></w:r></w:p>`;
+  }
+  if (!body) body = "<w:p/>";
+
+  zip.file("word/document.xml",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:body>${body}
+<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>
+<w:pgMar w:top="1417" w:right="1417" w:bottom="1134" w:left="1417"/></w:sectPr>
+</w:body></w:document>`);
+
+  return zip.generateAsync({
+    type: "blob",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    compression: "DEFLATE",
+  });
+}
+
+/** Absätze [{text, heading, bold}] als PDF setzen (A4, Helvetica). */
+function schreibeAbsaetzePdf(absaetze) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const seiteB = doc.internal.pageSize.getWidth();
+  const seiteH = doc.internal.pageSize.getHeight();
+  const rand = 64, maxB = seiteB - rand * 2;
+  let y = rand;
+
+  const neueSeiteWennNoetig = (zeilenH) => {
+    if (y + zeilenH > seiteH - rand) { doc.addPage(); y = rand; }
+  };
+
+  for (const a of absaetze) {
+    if (!a.text) { y += 8; continue; }
+    const groesse = a.heading ? 16 : 11;
+    const zeilenH = groesse * 1.4;
+    doc.setFont("helvetica", (a.heading || a.bold) ? "bold" : "normal");
+    doc.setFontSize(groesse);
+    const zeilen = doc.splitTextToSize(a.text, maxB);
+    if (a.heading) { neueSeiteWennNoetig(zeilenH); y += 6; }
+    for (const z of zeilen) {
+      neueSeiteWennNoetig(zeilenH);
+      doc.text(z, rand, y);
+      y += zeilenH;
+    }
+    y += 6; // Absatzabstand
+  }
+  return doc.output("blob");
+}
+
+/** Fließtext in Absätze zerlegen: Leerzeile = Absatz, #-Zeilen = Überschrift. */
+function textZuAbsaetze(text, markdown) {
+  const bloecke = text.replace(/\r\n?/g, "\n").split(/\n{2,}/);
+  const absaetze = [];
+  for (const b of bloecke) {
+    const zeilen = b.split("\n").map(z => z.trim()).filter(Boolean);
+    if (!zeilen.length) continue;
+    let heading = false, teil = [];
+    const flush = () => {
+      if (!teil.length) return;
+      let t = "";
+      for (const z of teil) {
+        if (t.endsWith("-")) t = t.slice(0, -1) + z;
+        else t += (t ? " " : "") + z;
+      }
+      if (markdown) t = t.replace(/\*\*|__|`|\*/g, "");
+      absaetze.push({ text: t, heading });
+      teil = []; heading = false;
+    };
+    for (const z of zeilen) {
+      if (markdown && /^#{1,6}\s+/.test(z)) {
+        flush();
+        absaetze.push({ text: z.replace(/^#{1,6}\s+/, "").replace(/\*\*|__|`|\*/g, ""), heading: true });
+      } else {
+        teil.push(z);
+      }
+    }
+    flush();
+  }
+  return absaetze;
+}
+
+/* =============================================================
+   BILD-Umwandlungen
+   ============================================================= */
+function ladeBild(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => res({ img, url });
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("Bild konnte nicht gelesen werden.")); };
+    img.src = url;
+  });
+}
+
+function bildAufCanvas(img, weisserGrund) {
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const ctx = c.getContext("2d");
+  if (weisserGrund) { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); }
+  ctx.drawImage(img, 0, 0);
+  return c;
+}
+
+function canvasZuBlob(canvas, mime, qualitaet) {
+  return new Promise((res, rej) => {
+    canvas.toBlob(b => b ? res(b) : rej(new Error("Der Browser konnte dieses Format nicht erzeugen.")), mime, qualitaet);
+  });
+}
+
+async function bildZuBild(d, row, ziel) {
+  try {
+    setStatus(row, "Wandle Bild um …", "laeuft");
+    const mime = ziel === "png" ? "image/png" : ziel === "jpg" ? "image/jpeg" : "image/webp";
+    const { img, url } = await ladeBild(d.file);
+    const canvas = bildAufCanvas(img, ziel === "jpg"); // JPG kennt keine Transparenz
+    URL.revokeObjectURL(url);
+    const blob = await canvasZuBlob(canvas, mime, 0.92);
+    zeigeErgebnis(row, blob, basisname(d.file.name) + "." + ziel);
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function bildAlsPdfSeite(pdfDoc, file) {
+  const { img, url } = await ladeBild(file);
+  const canvas = bildAufCanvas(img, true);
+  URL.revokeObjectURL(url);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+  const bytes = Uint8Array.from(atob(dataUrl.split(",")[1]), c => c.charCodeAt(0));
+  const eingebettet = await pdfDoc.embedJpg(bytes);
+  // 96 px ≈ 72 pt → Faktor 0,75; sehr große Bilder auf max. ~ A2 begrenzen
+  let w = canvas.width * 0.75, h = canvas.height * 0.75;
+  const max = 1684; // A2-Längsseite in pt
+  const f = Math.min(1, max / Math.max(w, h));
+  w *= f; h *= f;
+  const page = pdfDoc.addPage([w, h]);
+  page.drawImage(eingebettet, { x: 0, y: 0, width: w, height: h });
+}
+
+async function bildZuPdf(d, row) {
+  try {
+    setStatus(row, "Erzeuge PDF …", "laeuft");
+    const pdfDoc = await PDFDocument.create();
+    await bildAlsPdfSeite(pdfDoc, d.file);
+    const bytes = await pdfDoc.save();
+    zeigeErgebnis(row, new Blob([bytes], { type: "application/pdf" }), basisname(d.file.name) + ".pdf");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function bilderZuEinemPdf(bilder) {
+  try {
+    sammelStatus.className = "status laeuft";
+    sammelStatus.textContent = "Setze " + bilder.length + " Bilder zu einem PDF zusammen …";
+    const pdfDoc = await PDFDocument.create();
+    for (const d of bilder) await bildAlsPdfSeite(pdfDoc, d.file);
+    const bytes = await pdfDoc.save();
+    sammelStatus.textContent = "";
+    zeigeErgebnis(sammelErgebnis, new Blob([bytes], { type: "application/pdf" }),
+      "bilder-sammlung.pdf", bilder.length + " Seiten, Reihenfolge wie in der Liste");
+  } catch (err) {
+    sammelStatus.className = "status fehler";
+    sammelStatus.textContent = "Fehler: " + fehlermeldung(err);
+  }
+}
+
+/* =============================================================
+   OCR-Texterkennung (Tesseract.js, Deutsch + Englisch)
+   ============================================================= */
+let _ocrWorker = null;
+
+async function holeOcrWorker(statusCb) {
+  if (_ocrWorker) return _ocrWorker;
+  if (typeof Tesseract === "undefined")
+    throw new Error("Die OCR-Bibliothek konnte nicht geladen werden. Bitte Internetverbindung prüfen und Seite neu laden.");
+  statusCb("Lade Texterkennung (einmalig, ~15 MB) …");
+  try {
+    const worker = await Tesseract.createWorker({
+      logger: m => {
+        if (m.status === "recognizing text")
+          statusCb("Erkenne Text … " + Math.round(m.progress * 100) + " %");
+      },
+    });
+    await worker.loadLanguage("deu+eng");
+    await worker.initialize("deu+eng");
+    _ocrWorker = worker;
+    return worker;
+  } catch (err) {
+    throw new Error("Texterkennung konnte nicht geladen werden (Internet nötig für den einmaligen Download des Sprachmodells).");
+  }
+}
+
+async function bildZuTextOcr(d, row) {
+  try {
+    const worker = await holeOcrWorker(t => setStatus(row, t, "laeuft"));
+    setStatus(row, "Erkenne Text im Bild …", "laeuft");
+    const { img, url } = await ladeBild(d.file);
+    const canvas = bildAufCanvas(img, true);
+    URL.revokeObjectURL(url);
+    const { data } = await worker.recognize(canvas);
+    const text = (data.text || "").trim();
+    if (!text) throw new Error("Es wurde kein Text erkannt. Ist das Bild scharf und der Text gut lesbar?");
+    zeigeErgebnis(row, new Blob([text], { type: "text/plain;charset=utf-8" }),
+      basisname(d.file.name) + "-ocr.txt", "per OCR erkannt — bitte gegenlesen");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function pdfOcr(d, row, ziel) {
+  try {
+    const worker = await holeOcrWorker(t => setStatus(row, t, "laeuft"));
+    setStatus(row, "Öffne PDF …", "laeuft");
+    const pdf = await oeffnePdf(d.file);
+    const seitentexte = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      setStatus(row, "OCR Seite " + p + " von " + pdf.numPages + " …", "laeuft");
+      const page = await pdf.getPage(p);
+      const vp1 = page.getViewport({ scale: 1 });
+      const scale = Math.min(2.5, 2600 / Math.max(vp1.width, vp1.height));
+      const vp = page.getViewport({ scale });
+      const c = document.createElement("canvas");
+      c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+      await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+      const { data } = await worker.recognize(c);
+      seitentexte.push((data.text || "").trim());
+    }
+    const gesamt = seitentexte.filter(Boolean).join("\n\n");
+    if (!gesamt) throw new Error("Es wurde kein Text erkannt. Ist der Scan scharf genug?");
+
+    if (ziel === "txt") {
+      zeigeErgebnis(row, new Blob([gesamt], { type: "text/plain;charset=utf-8" }),
+        basisname(d.file.name) + "-ocr.txt", "per OCR erkannt — bitte gegenlesen");
+    } else {
+      setStatus(row, "Baue Word-Dokument …", "laeuft");
+      const absaetze = textZuAbsaetze(gesamt, false);
+      const blob = await baueDocx(absaetze);
+      zeigeErgebnis(row, blob, basisname(d.file.name) + "-ocr.docx",
+        absaetze.length + " Absätze per OCR erkannt — bitte gegenlesen");
+    }
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+/* =============================================================
+   PDF lesen (PDF.js): Text mit Struktur herausziehen
+   ============================================================= */
+async function oeffnePdf(file) {
+  const buf = await file.arrayBuffer();
+  try {
+    return await pdfjsLib.getDocument({ data: buf }).promise;
+  } catch (err) {
+    if (err && err.name === "PasswordException")
+      throw new Error("Dieses PDF ist passwortgeschützt.");
+    throw new Error("PDF konnte nicht gelesen werden.");
+  }
+}
+
+async function extrahierePdfAbsaetze(pdf, statusCb) {
+  const absaetze = [];
+  let zeichenGesamt = 0;
+  let alleHoehen = [];
+
+  for (let p = 1; p <= pdf.numPages; p++) {
+    if (statusCb) statusCb("Lese Seite " + p + " von " + pdf.numPages + " …");
+    const page = await pdf.getPage(p);
+    const tc = await page.getTextContent();
+
+    // 1) Einzelstücke einsammeln
+    const teile = [];
+    for (const it of tc.items) {
+      if (!it.str) continue;
+      const t = it.transform;
+      const h = Math.abs(t[3]) || Math.abs(t[0]) || 10;
+      teile.push({ str: it.str, x: t[4], y: t[5], w: it.width || 0, h });
+    }
+    if (teile.length === 0) continue;
+
+    // 2) Zu Zeilen gruppieren (gleiche Grundlinie)
+    teile.sort((a, b) => (Math.abs(b.y - a.y) > 2 ? b.y - a.y : a.x - b.x));
+    const zeilen = [];
+    for (const t of teile) {
+      const z = zeilen[zeilen.length - 1];
+      if (z && Math.abs(z.y - t.y) <= Math.max(2, z.h * 0.45)) {
+        z.items.push(t);
+        z.h = Math.max(z.h, t.h);
+      } else {
+        zeilen.push({ y: t.y, h: t.h, items: [t] });
+      }
+    }
+
+    // 3) Zeilentext mit Wortabständen zusammensetzen
+    for (const z of zeilen) {
+      z.items.sort((a, b) => a.x - b.x);
+      let text = "", endeX = null;
+      for (const it of z.items) {
+        if (endeX !== null && it.x - endeX > Math.max(1.2, it.h * 0.25) &&
+            text && !text.endsWith(" ") && !it.str.startsWith(" ")) text += " ";
+        text += it.str;
+        endeX = it.x + it.w;
+      }
+      z.text = text.replace(/\s+/g, " ").trim();
+      alleHoehen.push(z.h);
+    }
+    const gefuellt = zeilen.filter(z => z.text);
+    zeichenGesamt += gefuellt.reduce((s, z) => s + z.text.length, 0);
+
+    // 4) Zeilen zu Absätzen verbinden (Lücken + Schriftgröße)
+    const medianH = median(alleHoehen) || 11;
+    let aktuell = null;
+    for (let i = 0; i < gefuellt.length; i++) {
+      const z = gefuellt[i];
+      const vor = gefuellt[i - 1];
+      const luecke = vor ? vor.y - z.y : Infinity;
+      const istUeberschrift = z.h > medianH * 1.25 && z.text.length < 90;
+      const neuerAbsatz = !aktuell || istUeberschrift || (aktuell && aktuell.heading) ||
+        luecke > Math.max(z.h, vor ? vor.h : z.h) * 1.65;
+
+      if (neuerAbsatz) {
+        aktuell = { text: z.text, heading: istUeberschrift };
+        absaetze.push(aktuell);
+      } else if (aktuell.text.endsWith("-")) {
+        aktuell.text = aktuell.text.slice(0, -1) + z.text; // Silbentrennung auflösen
+      } else {
+        aktuell.text += " " + z.text;
+      }
+    }
+    aktuell = null; // Seitenwechsel = Absatzende
+  }
+
+  const proSeite = zeichenGesamt / pdf.numPages;
+  return { absaetze, vermutlichScan: proSeite < 8 };
+}
+
+const SCAN_HINWEIS = "Dieses PDF hat (fast) keine Textebene — vermutlich ein Scan. Nutze den Knopf „Word per OCR (Scans)“ bzw. „Text per OCR (Scans)“.";
+
+async function pdfZuDocx(d, row) {
+  try {
+    setStatus(row, "Öffne PDF …", "laeuft");
+    const pdf = await oeffnePdf(d.file);
+    const { absaetze, vermutlichScan } = await extrahierePdfAbsaetze(pdf, t => setStatus(row, t, "laeuft"));
+    if (vermutlichScan) throw new Error(SCAN_HINWEIS);
+    setStatus(row, "Baue Word-Dokument …", "laeuft");
+    const blob = await baueDocx(absaetze);
+    zeigeErgebnis(row, blob, basisname(d.file.name) + ".docx",
+      absaetze.length + " Absätze übernommen");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function pdfZuText(d, row) {
+  try {
+    setStatus(row, "Lese PDF …", "laeuft");
+    const pdf = await oeffnePdf(d.file);
+    const { absaetze, vermutlichScan } = await extrahierePdfAbsaetze(pdf, t => setStatus(row, t, "laeuft"));
+    if (vermutlichScan) throw new Error(SCAN_HINWEIS);
+    const text = absaetze.map(a => a.text).join("\n\n");
+    zeigeErgebnis(row, new Blob([text], { type: "text/plain;charset=utf-8" }),
+      basisname(d.file.name) + ".txt");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+/* ---------- PDF → Bilder ---------- */
+async function pdfZuBilder(d, row) {
+  try {
+    setStatus(row, "Öffne PDF …", "laeuft");
+    const pdf = await oeffnePdf(d.file);
+    const seiten = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      setStatus(row, "Rendere Seite " + p + " von " + pdf.numPages + " …", "laeuft");
+      const page = await pdf.getPage(p);
+      const vp = page.getViewport({ scale: 2 }); // ~144 dpi
+      const c = document.createElement("canvas");
+      c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+      await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+      seiten.push(await canvasZuBlob(c, "image/png"));
+    }
+    const basis = basisname(d.file.name);
+    if (seiten.length === 1) {
+      zeigeErgebnis(row, seiten[0], basis + ".png");
+    } else {
+      setStatus(row, "Packe " + seiten.length + " Seiten als ZIP …", "laeuft");
+      const zip = new JSZip();
+      seiten.forEach((b, i) => zip.file(basis + "-seite-" + String(i + 1).padStart(2, "0") + ".png", b));
+      const blob = await zip.generateAsync({ type: "blob" });
+      zeigeErgebnis(row, blob, basis + "-seiten.zip", seiten.length + " PNG-Dateien im ZIP");
+    }
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+/* ---------- PDFs zusammenführen ---------- */
+async function pdfsZusammen(pdfs) {
+  try {
+    sammelStatus.className = "status laeuft";
+    sammelStatus.textContent = "Führe " + pdfs.length + " PDFs zusammen …";
+    const ziel = await PDFDocument.create();
+    for (const d of pdfs) {
+      const src = await PDFDocument.load(await d.file.arrayBuffer(), { ignoreEncryption: false });
+      const pages = await ziel.copyPages(src, src.getPageIndices());
+      pages.forEach(pg => ziel.addPage(pg));
+    }
+    const bytes = await ziel.save();
+    sammelStatus.textContent = "";
+    zeigeErgebnis(sammelErgebnis, new Blob([bytes], { type: "application/pdf" }),
+      "zusammengefuehrt.pdf", "Reihenfolge wie in der Liste");
+  } catch (err) {
+    sammelStatus.className = "status fehler";
+    const m = fehlermeldung(err);
+    sammelStatus.textContent = "Fehler: " + (m.includes("encrypt")
+      ? "Mindestens ein PDF ist verschlüsselt." : m);
+  }
+}
+
+/* =============================================================
+   Word (.docx) lesen und → PDF / → Text
+   ============================================================= */
+const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+async function leseDocx(file) {
+  let zip;
+  try { zip = await JSZip.loadAsync(await file.arrayBuffer()); }
+  catch { throw new Error("Datei ist keine gültige .docx (ZIP-Struktur fehlt)."); }
+  const eintrag = zip.file("word/document.xml");
+  if (!eintrag) throw new Error("word/document.xml fehlt — keine gültige Word-Datei.");
+  const xml = await eintrag.async("string");
+  const dom = new DOMParser().parseFromString(xml, "application/xml");
+  if (dom.getElementsByTagName("parsererror").length)
+    throw new Error("Das Dokument-XML konnte nicht gelesen werden.");
+
+  const absaetze = [];
+  const ps = dom.getElementsByTagNameNS(W_NS, "p");
+  for (const p of ps) {
+    let text = "";
+    for (const t of p.getElementsByTagNameNS(W_NS, "t")) text += t.textContent;
+    text = text.replace(/\u00A0/g, " ");
+
+    let heading = false;
+    const stil = p.getElementsByTagNameNS(W_NS, "pStyle")[0];
+    if (stil) {
+      const v = stil.getAttributeNS(W_NS, "val") || stil.getAttribute("w:val") || "";
+      heading = /^(heading|berschrift|title|titel)/i.test(v);
+    }
+
+    const runs = p.getElementsByTagNameNS(W_NS, "r").length;
+    const fett = p.getElementsByTagNameNS(W_NS, "b").length;
+    const bold = runs > 0 && fett >= runs;
+
+    absaetze.push({ text: text.trim(), heading, bold });
+  }
+  return absaetze;
+}
+
+async function docxZuPdf(d, row) {
+  try {
+    setStatus(row, "Lese Word-Dokument …", "laeuft");
+    const absaetze = await leseDocx(d.file);
+    if (absaetze.every(a => !a.text))
+      throw new Error("Im Dokument wurde kein Text gefunden.");
+    setStatus(row, "Setze PDF …", "laeuft");
+    const blob = schreibeAbsaetzePdf(absaetze);
+    zeigeErgebnis(row, blob, basisname(d.file.name) + ".pdf",
+      "Text, Überschriften und Fettdruck übernommen");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function docxZuText(d, row) {
+  try {
+    setStatus(row, "Lese Word-Dokument …", "laeuft");
+    const absaetze = await leseDocx(d.file);
+    const text = absaetze.map(a => a.text).join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+    if (!text) throw new Error("Im Dokument wurde kein Text gefunden.");
+    zeigeErgebnis(row, new Blob([text], { type: "text/plain;charset=utf-8" }),
+      basisname(d.file.name) + ".txt");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+/* =============================================================
+   Excel (.xlsx/.xls) und CSV
+   ============================================================= */
+async function leseTextRobust(file) {
+  // UTF-8 zuerst; wenn ungültig (typisch bei Excel-CSV), Windows-1252
+  const buf = await file.arrayBuffer();
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(buf); }
+  catch { return new TextDecoder("windows-1252").decode(buf); }
+}
+
+async function leseArbeitsmappe(d) {
+  if (d.kind === "csv") {
+    const text = await leseTextRobust(d.file);
+    return XLSX.read(text, { type: "string" });
+  }
+  const buf = await d.file.arrayBuffer();
+  try { return XLSX.read(buf, { type: "array" }); }
+  catch { throw new Error("Die Tabelle konnte nicht gelesen werden. Ist die Datei beschädigt oder passwortgeschützt?"); }
+}
+
+async function excelZuPdf(d, row) {
+  try {
+    setStatus(row, "Lese Tabelle …", "laeuft");
+    const wb = await leseArbeitsmappe(d);
+
+    // Blätter mit Inhalt und maximale Spaltenzahl ermitteln
+    const blaetter = [];
+    let maxSpalten = 0;
+    for (const name of wb.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: "" });
+      const gefuellt = rows.filter(r => r.some(z => String(z).trim() !== ""));
+      if (gefuellt.length) {
+        blaetter.push({ name, rows: gefuellt });
+        maxSpalten = Math.max(maxSpalten, ...gefuellt.map(r => r.length));
+      }
+    }
+    if (!blaetter.length) throw new Error("Die Tabelle enthält keine Daten.");
+
+    setStatus(row, "Setze PDF-Tabelle …", "laeuft");
+    const quer = maxSpalten > 6;
+    const doc = new jsPDF({ unit: "pt", format: "a4", orientation: quer ? "landscape" : "portrait" });
+    const rand = 40;
+
+    blaetter.forEach((blatt, bi) => {
+      if (bi > 0) doc.addPage();
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text(blatt.name, rand, rand);
+
+      const kopf = blatt.rows[0].map(z => String(z));
+      const daten = blatt.rows.slice(1).map(r => r.map(z => String(z)));
+
+      if (typeof doc.autoTable === "function") {
+        doc.autoTable({
+          head: [kopf],
+          body: daten.length ? daten : [kopf.map(() => "")],
+          startY: rand + 14,
+          margin: { left: rand, right: rand },
+          styles: { font: "helvetica", fontSize: 8, cellPadding: 3, overflow: "linebreak" },
+          headStyles: { fillColor: [32, 56, 200], textColor: 255, fontStyle: "bold" },
+          theme: "grid",
+        });
+      } else {
+        // Notfall ohne Tabellen-Plugin: Zeilen als Text
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        let y = rand + 20;
+        for (const r of blatt.rows) {
+          const zeilen = doc.splitTextToSize(r.join("  |  "), doc.internal.pageSize.getWidth() - rand * 2);
+          for (const z of zeilen) {
+            if (y > doc.internal.pageSize.getHeight() - rand) { doc.addPage(); y = rand; }
+            doc.text(z, rand, y); y += 11;
+          }
+        }
+      }
+    });
+
+    const blob = doc.output("blob");
+    zeigeErgebnis(row, blob, basisname(d.file.name) + ".pdf",
+      blaetter.length + (blaetter.length === 1 ? " Tabellenblatt" : " Tabellenblätter") + " übernommen");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function excelZuCsv(d, row) {
+  try {
+    setStatus(row, "Lese Tabelle …", "laeuft");
+    const wb = await leseArbeitsmappe(d);
+    const BOM = "\ufeff"; // damit Excel Umlaute korrekt anzeigt
+    const basis = basisname(d.file.name);
+    const mitInhalt = wb.SheetNames.filter(n =>
+      XLSX.utils.sheet_to_csv(wb.Sheets[n], { FS: ";" }).trim() !== "");
+    if (!mitInhalt.length) throw new Error("Die Tabelle enthält keine Daten.");
+
+    if (mitInhalt.length === 1) {
+      const csv = XLSX.utils.sheet_to_csv(wb.Sheets[mitInhalt[0]], { FS: ";" });
+      zeigeErgebnis(row, new Blob([BOM + csv], { type: "text/csv;charset=utf-8" }),
+        basis + ".csv", "Trennzeichen: Semikolon (deutsches Excel)");
+    } else {
+      const zip = new JSZip();
+      for (const n of mitInhalt) {
+        const csv = XLSX.utils.sheet_to_csv(wb.Sheets[n], { FS: ";" });
+        zip.file(basis + "-" + n.replace(/[^\wäöüÄÖÜß -]/g, "_") + ".csv", BOM + csv);
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      zeigeErgebnis(row, blob, basis + "-csv.zip",
+        mitInhalt.length + " Tabellenblätter als einzelne CSV-Dateien");
+    }
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function csvZuExcel(d, row) {
+  try {
+    setStatus(row, "Lese CSV …", "laeuft");
+    const wb = await leseArbeitsmappe(d);
+    const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    zeigeErgebnis(row, new Blob([out], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      basisname(d.file.name) + ".xlsx");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+/* =============================================================
+   PowerPoint (.pptx): Text aus Folien
+   ============================================================= */
+const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+
+async function lesePptxAbsaetze(file) {
+  let zip;
+  try { zip = await JSZip.loadAsync(await file.arrayBuffer()); }
+  catch { throw new Error("Datei ist keine gültige .pptx (ZIP-Struktur fehlt)."); }
+
+  const folien = Object.keys(zip.files)
+    .map(p => { const m = p.match(/^ppt\/slides\/slide(\d+)\.xml$/); return m ? { pfad: p, nr: +m[1] } : null; })
+    .filter(Boolean)
+    .sort((a, b) => a.nr - b.nr);
+  if (!folien.length) throw new Error("Keine Folien gefunden — ist das eine gültige .pptx?");
+
+  const absaetze = [];
+  for (const f of folien) {
+    const xml = await zip.file(f.pfad).async("string");
+    const dom = new DOMParser().parseFromString(xml, "application/xml");
+    absaetze.push({ text: "Folie " + f.nr, heading: true });
+    for (const p of dom.getElementsByTagNameNS(A_NS, "p")) {
+      let t = "";
+      for (const el of p.getElementsByTagNameNS(A_NS, "t")) t += el.textContent;
+      t = t.trim();
+      if (t) absaetze.push({ text: t, heading: false });
+    }
+  }
+  return { absaetze, anzahl: folien.length };
+}
+
+async function pptxZuText(d, row) {
+  try {
+    setStatus(row, "Lese Präsentation …", "laeuft");
+    const { absaetze, anzahl } = await lesePptxAbsaetze(d.file);
+    const text = absaetze.map(a => a.heading ? "\n=== " + a.text + " ===" : a.text)
+      .join("\n").trim();
+    zeigeErgebnis(row, new Blob([text], { type: "text/plain;charset=utf-8" }),
+      basisname(d.file.name) + ".txt", anzahl + " Folien");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function pptxZuPdf(d, row) {
+  try {
+    setStatus(row, "Lese Präsentation …", "laeuft");
+    const { absaetze, anzahl } = await lesePptxAbsaetze(d.file);
+    setStatus(row, "Setze PDF …", "laeuft");
+    const blob = schreibeAbsaetzePdf(absaetze);
+    zeigeErgebnis(row, blob, basisname(d.file.name) + ".pdf",
+      "Textfassung aller " + anzahl + " Folien (ohne Layout/Bilder)");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+/* =============================================================
+   OpenDocument Text (.odt)
+   ============================================================= */
+const ODT_TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
+
+async function leseOdtAbsaetze(file) {
+  let zip;
+  try { zip = await JSZip.loadAsync(await file.arrayBuffer()); }
+  catch { throw new Error("Datei ist keine gültige .odt (ZIP-Struktur fehlt)."); }
+  const eintrag = zip.file("content.xml");
+  if (!eintrag) throw new Error("content.xml fehlt — keine gültige OpenDocument-Datei.");
+  const dom = new DOMParser().parseFromString(await eintrag.async("string"), "application/xml");
+
+  const absaetze = [];
+  for (const el of dom.getElementsByTagName("*")) {
+    if (el.namespaceURI !== ODT_TEXT_NS) continue;
+    if (el.localName === "p") absaetze.push({ text: el.textContent.trim(), heading: false });
+    else if (el.localName === "h") absaetze.push({ text: el.textContent.trim(), heading: true });
+  }
+  if (!absaetze.some(a => a.text)) throw new Error("Im Dokument wurde kein Text gefunden.");
+  return absaetze;
+}
+
+async function odtZuDocx(d, row) {
+  try {
+    setStatus(row, "Lese ODT …", "laeuft");
+    const absaetze = await leseOdtAbsaetze(d.file);
+    setStatus(row, "Baue Word-Dokument …", "laeuft");
+    const blob = await baueDocx(absaetze);
+    zeigeErgebnis(row, blob, basisname(d.file.name) + ".docx");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function odtZuPdf(d, row) {
+  try {
+    setStatus(row, "Lese ODT …", "laeuft");
+    const absaetze = await leseOdtAbsaetze(d.file);
+    setStatus(row, "Setze PDF …", "laeuft");
+    const blob = schreibeAbsaetzePdf(absaetze);
+    zeigeErgebnis(row, blob, basisname(d.file.name) + ".pdf");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function odtZuText(d, row) {
+  try {
+    setStatus(row, "Lese ODT …", "laeuft");
+    const absaetze = await leseOdtAbsaetze(d.file);
+    const text = absaetze.map(a => a.text).filter(Boolean).join("\n\n");
+    zeigeErgebnis(row, new Blob([text], { type: "text/plain;charset=utf-8" }),
+      basisname(d.file.name) + ".txt");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+/* =============================================================
+   RTF: einfacher Parser (Text, Absätze, Windows-1252, Unicode)
+   ============================================================= */
+function rtfZuText(rtf) {
+  const dec1252 = new TextDecoder("windows-1252");
+  const SKIP_ZIELE = new Set(["fonttbl","colortbl","stylesheet","info","pict",
+    "themedata","header","footer","headerl","headerr","footerl","footerr",
+    "generator","xmlnstbl","listtable","listoverridetable","latentstyles","rsidtbl"]);
+  let out = "";
+  const stack = [];
+  let skip = false, uc = 1, pendingSkip = 0;
+  let i = 0;
+
+  while (i < rtf.length) {
+    const c = rtf[i];
+    if (c === "{") { stack.push({ skip, uc }); i++; continue; }
+    if (c === "}") {
+      const s = stack.pop();
+      if (s) { skip = s.skip; uc = s.uc; }
+      i++; continue;
+    }
+    if (c === "\\") {
+      const rest = rtf.slice(i + 1);
+      if (rest[0] === "*") { skip = true; i += 2; continue; }
+      if (rest[0] === "'" ) { // \'hh — Windows-1252-Byte
+        const hex = rest.slice(1, 3);
+        i += 4;
+        if (pendingSkip > 0) { pendingSkip--; continue; }
+        if (!skip) out += dec1252.decode(new Uint8Array([parseInt(hex, 16) || 32]));
+        continue;
+      }
+      if (rest[0] === "\\" || rest[0] === "{" || rest[0] === "}") { // Maskierte Zeichen
+        i += 2;
+        if (!skip) out += rest[0];
+        continue;
+      }
+      const m = rest.match(/^([a-zA-Z]+)(-?\d+)? ?/);
+      if (m) {
+        const wort = m[1], zahl = m[2] ? parseInt(m[2], 10) : null;
+        i += 1 + m[0].length;
+        if (SKIP_ZIELE.has(wort)) { skip = true; continue; }
+        if (wort === "uc") { uc = zahl === null ? 1 : zahl; continue; }
+        if (wort === "u" && zahl !== null) {
+          if (!skip) out += String.fromCharCode(zahl < 0 ? zahl + 65536 : zahl);
+          pendingSkip = uc;
+          continue;
+        }
+        if (!skip) {
+          if (wort === "par" || wort === "line" || wort === "row") out += "\n";
+          else if (wort === "tab" || wort === "cell") out += "\t";
+          else if (wort === "emdash") out += "—";
+          else if (wort === "endash") out += "–";
+          else if (wort === "lquote") out += "‚";
+          else if (wort === "rquote") out += "'";
+          else if (wort === "ldblquote") out += "„";
+          else if (wort === "rdblquote") out += "\u201C";
+        }
+        continue;
+      }
+      i++; continue; // unbekannte Steuersequenz überspringen
+    }
+    // normales Zeichen
+    i++;
+    if (c === "\r" || c === "\n") continue;
+    if (pendingSkip > 0) { pendingSkip--; continue; }
+    if (!skip) out += c;
+  }
+  return out.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+async function leseRtfText(file) {
+  const roh = await leseTextRobust(file);
+  if (!/^\s*{\\rtf/.test(roh)) throw new Error("Das ist keine gültige RTF-Datei.");
+  const text = rtfZuText(roh);
+  if (!text) throw new Error("Im Dokument wurde kein Text gefunden.");
+  return text;
+}
+
+async function rtfZuTextDatei(d, row) {
+  try {
+    setStatus(row, "Lese RTF …", "laeuft");
+    const text = await leseRtfText(d.file);
+    zeigeErgebnis(row, new Blob([text], { type: "text/plain;charset=utf-8" }),
+      basisname(d.file.name) + ".txt");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function rtfZuPdf(d, row) {
+  try {
+    setStatus(row, "Lese RTF …", "laeuft");
+    const text = await leseRtfText(d.file);
+    setStatus(row, "Setze PDF …", "laeuft");
+    const blob = schreibeAbsaetzePdf(textZuAbsaetze(text, false));
+    zeigeErgebnis(row, blob, basisname(d.file.name) + ".pdf");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+/* =============================================================
+   Text / Markdown
+   ============================================================= */
+async function txtZuPdf(d, row) {
+  try {
+    setStatus(row, "Lese Text …", "laeuft");
+    const text = await leseTextRobust(d.file);
+    if (!text.trim()) throw new Error("Die Datei ist leer.");
+    const istMd = /\.(md|markdown)$/i.test(d.file.name);
+    setStatus(row, "Setze PDF …", "laeuft");
+    const blob = schreibeAbsaetzePdf(textZuAbsaetze(text, istMd));
+    zeigeErgebnis(row, blob, basisname(d.file.name) + ".pdf");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function txtZuDocx(d, row) {
+  try {
+    setStatus(row, "Lese Text …", "laeuft");
+    const text = await leseTextRobust(d.file);
+    if (!text.trim()) throw new Error("Die Datei ist leer.");
+    const istMd = /\.(md|markdown)$/i.test(d.file.name);
+    setStatus(row, "Baue Word-Dokument …", "laeuft");
+    const blob = await baueDocx(textZuAbsaetze(text, istMd));
+    zeigeErgebnis(row, blob, basisname(d.file.name) + ".docx");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+</script>
+</body>
+</html>
