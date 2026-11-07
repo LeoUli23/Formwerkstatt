@@ -106,6 +106,20 @@
   .entfernen:focus-visible{outline:2px solid var(--accent)}
 
   .ziele{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+
+  .komprimieren{
+    margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);
+  }
+  .komprimieren-kopf{
+    font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:8px;
+  }
+  .komprimieren-btns{display:flex;flex-wrap:wrap;gap:8px}
+  .btn.komprimieren-haupt{
+    background:var(--ok);border-color:var(--ok);color:#fff;
+  }
+  .btn.komprimieren-haupt:hover{background:#154F2C;border-color:#154F2C}
+  .btn.klein{font-size:12px;padding:8px 12px;min-height:36px;font-weight:500}
   .btn{
     font-family:var(--sans);font-size:13px;font-weight:600;
     border:1px solid var(--ink);background:var(--sheet);color:var(--ink);
@@ -198,10 +212,10 @@
   </section>
 
   <div class="hinweis">
-    <strong>Gut zu wissen:</strong> PDF → Word übernimmt Text mit Absätzen und Überschriften; exaktes Seitenlayout (Spalten, Bilder, Tabellen) kann abweichen. Für gescannte PDFs und Fotos gibt es jetzt die <strong>OCR-Texterkennung</strong> (Deutsch + Englisch) — beim ersten Einsatz lädt sie einmalig ihr Sprachmodell (~15 MB), danach läuft alles lokal. Excel → PDF setzt jedes Tabellenblatt als saubere Tabelle; CSV mit Semikolon oder Komma wird automatisch erkannt. Word → PDF überträgt Text, Überschriften und Fettdruck; eingebettete Bilder werden nicht übernommen. Alte <em>.doc</em>- und <em>.ppt</em>-Dateien bitte einmal als <em>.docx</em>/<em>.pptx</em> speichern.
+    <strong>Gut zu wissen:</strong> PDF → Word übernimmt Text mit Absätzen und Überschriften; exaktes Seitenlayout (Spalten, Bilder, Tabellen) kann abweichen. Für gescannte PDFs und Fotos gibt es die <strong>OCR-Texterkennung</strong> (Deutsch + Englisch) — beim ersten Einsatz lädt sie einmalig ihr Sprachmodell (~15 MB), danach läuft alles lokal. Bei PDFs und Bildern gibt es jetzt unten in jeder Dateizeile einen eigenen Bereich <strong>„Komprimieren"</strong> — das Ergebnis bleibt im selben Format (PDF bleibt PDF), wird aber kleiner; bei einem PDF mit viel Fließtext ist der Text danach nicht mehr durchsuchbar. Excel → PDF setzt jedes Tabellenblatt als saubere Tabelle; CSV mit Semikolon oder Komma wird automatisch erkannt. Word → PDF überträgt Text, Überschriften und Fettdruck; eingebettete Bilder werden nicht übernommen. Jede Datei lässt sich jetzt auch als <strong>Markdown (.md)</strong> sichern — ideal fürs Projektwissen bei Claude; mit mehreren Dateien fasst „Alle Dateien → eine Projektwissen.md" alles in einer Datei zusammen (Excel als Tabellen, PowerPoint folienweise, Scans und Fotos per OCR). Alte <em>.doc</em>- und <em>.ppt</em>-Dateien bitte einmal als <em>.docx</em>/<em>.pptx</em> speichern.
   </div>
 
-  <footer><span>Formatwerkstatt v2.1</span><span>PDF.js · pdf-lib · jsPDF · JSZip · SheetJS · Tesseract</span></footer>
+  <footer><span>Formatwerkstatt v2.4</span><span>PDF.js · pdf-lib · jsPDF · JSZip · SheetJS · Tesseract</span></footer>
 </div>
 
 <script>
@@ -289,6 +303,7 @@ const ZIELE = {
     { label: "→ JPG",  fmt: "jpg",  fn: (d,row) => bildZuBild(d,row,"jpg") },
     { label: "→ WebP", fmt: "webp", fn: (d,row) => bildZuBild(d,row,"webp") },
     { label: "→ Text per OCR", fn: (d,row) => bildZuTextOcr(d,row) },
+    { label: "→ Markdown (.md)", fn: (d,row) => zuMarkdownDatei(d,row) },
   ],
   pdf: [
     { label: "→ Word (.docx)", primaer: true, fn: (d,row) => pdfZuDocx(d,row) },
@@ -296,35 +311,43 @@ const ZIELE = {
     { label: "→ Text (.txt)",  fn: (d,row) => pdfZuText(d,row) },
     { label: "→ Word per OCR (Scans)", fn: (d,row) => pdfOcr(d,row,"docx") },
     { label: "→ Text per OCR (Scans)", fn: (d,row) => pdfOcr(d,row,"txt") },
+    { label: "→ Markdown (.md)", fn: (d,row) => zuMarkdownDatei(d,row) },
   ],
   docx: [
     { label: "→ PDF", primaer: true, fn: (d,row) => docxZuPdf(d,row) },
     { label: "→ Text (.txt)", fn: (d,row) => docxZuText(d,row) },
+    { label: "→ Markdown (.md)", fn: (d,row) => zuMarkdownDatei(d,row) },
   ],
   xlsx: [
     { label: "→ PDF (Tabelle)", primaer: true, fn: (d,row) => excelZuPdf(d,row) },
     { label: "→ CSV", fn: (d,row) => excelZuCsv(d,row) },
+    { label: "→ Markdown (.md)", fn: (d,row) => zuMarkdownDatei(d,row) },
   ],
   csv: [
     { label: "→ Excel (.xlsx)", primaer: true, fn: (d,row) => csvZuExcel(d,row) },
     { label: "→ PDF (Tabelle)", fn: (d,row) => excelZuPdf(d,row) },
+    { label: "→ Markdown (.md)", fn: (d,row) => zuMarkdownDatei(d,row) },
   ],
   pptx: [
     { label: "→ PDF (Textfassung)", primaer: true, fn: (d,row) => pptxZuPdf(d,row) },
     { label: "→ Text (.txt)", fn: (d,row) => pptxZuText(d,row) },
+    { label: "→ Markdown (.md)", fn: (d,row) => zuMarkdownDatei(d,row) },
   ],
   odt: [
     { label: "→ Word (.docx)", primaer: true, fn: (d,row) => odtZuDocx(d,row) },
     { label: "→ PDF", fn: (d,row) => odtZuPdf(d,row) },
     { label: "→ Text (.txt)", fn: (d,row) => odtZuText(d,row) },
+    { label: "→ Markdown (.md)", fn: (d,row) => zuMarkdownDatei(d,row) },
   ],
   rtf: [
     { label: "→ Text (.txt)", primaer: true, fn: (d,row) => rtfZuTextDatei(d,row) },
     { label: "→ PDF", fn: (d,row) => rtfZuPdf(d,row) },
+    { label: "→ Markdown (.md)", fn: (d,row) => zuMarkdownDatei(d,row) },
   ],
   txt: [
     { label: "→ PDF", primaer: true, fn: (d,row) => txtZuPdf(d,row) },
     { label: "→ Word (.docx)", fn: (d,row) => txtZuDocx(d,row) },
+    { label: "→ Markdown (.md)", fmt: "md", fn: (d,row) => zuMarkdownDatei(d,row) },
   ],
 };
 
@@ -376,6 +399,32 @@ function renderList() {
         ziele.appendChild(b);
       }
       row.appendChild(ziele);
+
+      if (d.kind === "pdf" || d.kind === "bild") {
+        const komp = document.createElement("div");
+        komp.className = "komprimieren";
+        const kompKopf = document.createElement("div");
+        kompKopf.className = "komprimieren-kopf";
+        kompKopf.textContent = "Komprimieren — bleibt " + (d.kind === "pdf" ? "PDF" : "Bild");
+        const btns = document.createElement("div");
+        btns.className = "komprimieren-btns";
+
+        const haupt = document.createElement("button");
+        haupt.className = "btn komprimieren-haupt";
+        haupt.textContent = d.kind === "pdf" ? "PDF komprimieren" : "Bild komprimieren";
+        haupt.addEventListener("click", () => laufend(haupt, () =>
+          d.kind === "pdf" ? pdfKomprimieren(d, row, "standard") : bildKomprimieren(d, row, "standard")));
+
+        const staerker = document.createElement("button");
+        staerker.className = "btn klein";
+        staerker.textContent = "Noch kleiner";
+        staerker.addEventListener("click", () => laufend(staerker, () =>
+          d.kind === "pdf" ? pdfKomprimieren(d, row, "staerker") : bildKomprimieren(d, row, "staerker")));
+
+        btns.append(haupt, staerker);
+        komp.append(kompKopf, btns);
+        row.appendChild(komp);
+      }
     }
     fileList.appendChild(row);
   }
@@ -386,7 +435,8 @@ function renderSammel() {
   const bilder = dateien.filter(d => d.kind === "bild");
   const pdfs = dateien.filter(d => d.kind === "pdf");
   sammelAktionen.innerHTML = "";
-  const zeigen = bilder.length >= 2 || pdfs.length >= 2;
+  const lesbar = dateien.filter(d => ZIELE[d.kind]);
+  const zeigen = bilder.length >= 2 || pdfs.length >= 2 || lesbar.length >= 2;
   sammelFeld.hidden = !zeigen;
   if (!zeigen) return;
 
@@ -402,6 +452,13 @@ function renderSammel() {
     b.className = "btn";
     b.textContent = pdfs.length + " PDFs zusammenführen";
     b.addEventListener("click", () => laufend(b, () => pdfsZusammen(pdfs)));
+    sammelAktionen.appendChild(b);
+  }
+  if (lesbar.length >= 2) {
+    const b = document.createElement("button");
+    b.className = "btn komprimieren-haupt";
+    b.textContent = "Alle " + lesbar.length + " Dateien → eine Projektwissen.md";
+    b.addEventListener("click", () => laufend(b, () => alleZuMarkdown(lesbar)));
     sammelAktionen.appendChild(b);
   }
 }
@@ -435,7 +492,7 @@ function zeigeErgebnis(row, blob, dateiname, zusatz) {
 
   // iPhone/iPad: klassische Downloads werden dort oft blockiert.
   // Deshalb zuerst das native Teilen-Menü anbieten („In Dateien sichern“).
-  const datei = new File([blob], dateiname, { type: blob.type || "application/octet-stream" });
+  const datei = new File([blob], dateiname, { type: (blob.type || "application/octet-stream").split(";")[0] });
   const kannTeilen = !!(navigator.canShare && navigator.canShare({ files: [datei] }) && navigator.share);
 
   if (kannTeilen) {
@@ -917,6 +974,248 @@ async function pdfZuBilder(d, row) {
     }
   } catch (err) {
     setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+/* =============================================================
+   Komprimierung: PDF (seitenweise neu gerastert) und Bilder
+   ============================================================= */
+const STUFEN_PDF = {
+  standard: { dpi: 120, qualitaet: 0.70 },
+  staerker: { dpi: 96,  qualitaet: 0.45 },
+};
+const STUFEN_BILD = {
+  standard: { max: 2000, qualitaet: 0.75 },
+  staerker: { max: 1400, qualitaet: 0.55 },
+};
+
+function vergleichGroesse(alt, neu) {
+  const proz = Math.round((1 - neu / alt) * 100);
+  if (proz > 5) return fmtGroesse(alt) + " → " + fmtGroesse(neu) + " (−" + proz + " %)";
+  return fmtGroesse(alt) + " → " + fmtGroesse(neu) + " (kaum kleiner — Original war schon effizient)";
+}
+
+async function pdfKomprimieren(d, row, stufeName) {
+  try {
+    const stufe = STUFEN_PDF[stufeName];
+    setStatus(row, "Öffne PDF …", "laeuft");
+    const pdf = await oeffnePdf(d.file);
+    const neu = await PDFDocument.create();
+    const scale = stufe.dpi / 72; // PDF-Punkte: 72 pt = 1 Zoll
+
+    for (let p = 1; p <= pdf.numPages; p++) {
+      setStatus(row, "Komprimiere Seite " + p + " von " + pdf.numPages + " …", "laeuft");
+      const page = await pdf.getPage(p);
+      const vp1 = page.getViewport({ scale: 1 });     // Originalgröße in pt
+      const vp = page.getViewport({ scale });          // Renderauflösung
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(vp.width));
+      c.height = Math.max(1, Math.round(vp.height));
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+      const dataUrl = c.toDataURL("image/jpeg", stufe.qualitaet);
+      const bytes = Uint8Array.from(atob(dataUrl.split(",")[1]), ch => ch.charCodeAt(0));
+      const eingebettet = await neu.embedJpg(bytes);
+      const seite = neu.addPage([vp1.width, vp1.height]);
+      seite.drawImage(eingebettet, { x: 0, y: 0, width: vp1.width, height: vp1.height });
+    }
+
+    const bytes = await neu.save();
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const zusatz = vergleichGroesse(d.file.size, blob.size) +
+      " — Achtung: Text ist danach nicht mehr durchsuchbar/kopierbar (Seiten wurden als Bild neu gesetzt)";
+    zeigeErgebnis(row, blob, basisname(d.file.name) + "-komprimiert.pdf", zusatz);
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+async function bildKomprimieren(d, row, stufeName) {
+  try {
+    const stufe = STUFEN_BILD[stufeName];
+    setStatus(row, "Komprimiere Bild …", "laeuft");
+    const { img, url } = await ladeBild(d.file);
+    let w = img.naturalWidth, h = img.naturalHeight;
+    const f = Math.min(1, stufe.max / Math.max(w, h));
+    w = Math.max(1, Math.round(w * f));
+    h = Math.max(1, Math.round(h * f));
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h); // Transparenz → Weiß (JPEG kennt kein Alpha)
+    ctx.drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(url);
+    const blob = await canvasZuBlob(c, "image/jpeg", stufe.qualitaet);
+    zeigeErgebnis(row, blob, basisname(d.file.name) + "-komprimiert.jpg",
+      vergleichGroesse(d.file.size, blob.size));
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+/* =============================================================
+   Markdown-Export — Projektwissen für Claude aufbereiten
+   ============================================================= */
+function mdZelle(v) {
+  return String(v == null ? "" : v)
+    .replace(/\\/g, "\\\\").replace(/\|/g, "\\|")
+    .replace(/\r?\n/g, "<br>").trim();
+}
+
+function tabelleZuMd(rows) {
+  const breite = Math.max(1, ...rows.map(r => r.length));
+  const norm = rows.map(r => {
+    const z = r.map(mdZelle);
+    while (z.length < breite) z.push("");
+    return z;
+  });
+  const zeile = z => "| " + z.join(" | ") + " |";
+  return [zeile(norm[0]), zeile(norm[0].map(() => "---")), ...norm.slice(1).map(zeile)].join("\n");
+}
+
+function absaetzeZuMd(absaetze) {
+  return absaetze.filter(a => a.text).map(a =>
+    a.heading ? "## " + a.text : a.bold ? "**" + a.text + "**" : a.text
+  ).join("\n\n");
+}
+
+function mdKopf(d, inhalt, hinweis) {
+  const datum = new Date().toLocaleDateString("de-DE");
+  const quelle = d.file.name.replace(/`/g, "'");
+  return "# " + basisname(d.file.name) + "\n\n" +
+    "> Quelle: `" + quelle + "` · umgewandelt am " + datum + (hinweis ? " · " + hinweis : "") +
+    "\n\n" + (inhalt.trim() || "_(kein Text gefunden)_") + "\n";
+}
+
+async function ocrPdfSeitenMd(pdf, st) {
+  const worker = await holeOcrWorker(st);
+  const teile = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    st("OCR Seite " + p + " von " + pdf.numPages + " …");
+    const page = await pdf.getPage(p);
+    const vp1 = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: Math.min(2.5, 2600 / Math.max(vp1.width, vp1.height)) });
+    const c = document.createElement("canvas");
+    c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+    await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+    const { data } = await worker.recognize(c);
+    const text = textZuAbsaetze((data.text || "").trim(), false).map(a => a.text).join("\n\n");
+    if (text) teile.push("## Seite " + p + "\n\n" + text);
+  }
+  return teile.join("\n\n");
+}
+
+/** Liefert für jede unterstützte Datei einen Markdown-Text. */
+async function markdownFuer(d, st) {
+  switch (d.kind) {
+    case "pdf": {
+      st("Öffne PDF …");
+      const pdf = await oeffnePdf(d.file);
+      const { absaetze, vermutlichScan } = await extrahierePdfAbsaetze(pdf, st);
+      if (!vermutlichScan) return mdKopf(d, absaetzeZuMd(absaetze), pdf.numPages + " Seiten");
+      return mdKopf(d, await ocrPdfSeitenMd(pdf, st), "Scan, per OCR erkannt — bitte gegenlesen");
+    }
+    case "docx": {
+      st("Lese Word-Dokument …");
+      return mdKopf(d, absaetzeZuMd(await leseDocx(d.file)));
+    }
+    case "xlsx":
+    case "csv": {
+      st("Lese Tabelle …");
+      const wb = await leseArbeitsmappe(d);
+      const teile = [];
+      for (const name of wb.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: "" })
+          .filter(r => r.some(z => String(z).trim() !== ""));
+        if (rows.length) teile.push((d.kind === "csv" ? "" : "## " + name + "\n\n") + tabelleZuMd(rows));
+      }
+      if (!teile.length) throw new Error("Die Tabelle enthält keine Daten.");
+      return mdKopf(d, teile.join("\n\n"), d.kind === "csv" ? "Tabelle" : teile.length + (teile.length === 1 ? " Tabellenblatt" : " Tabellenblätter"));
+    }
+    case "pptx": {
+      st("Lese Präsentation …");
+      const { absaetze, anzahl } = await lesePptxAbsaetze(d.file);
+      const md = absaetze.map(a => a.heading ? "## " + a.text : "- " + a.text).join("\n")
+        .replace(/\n## /g, "\n\n## ").replace(/(## [^\n]+)\n/g, "$1\n\n");
+      return mdKopf(d, md, anzahl + " Folien");
+    }
+    case "odt": {
+      st("Lese ODT …");
+      return mdKopf(d, absaetzeZuMd(await leseOdtAbsaetze(d.file)));
+    }
+    case "rtf": {
+      st("Lese RTF …");
+      return mdKopf(d, absaetzeZuMd(textZuAbsaetze(await leseRtfText(d.file), false)));
+    }
+    case "txt": {
+      st("Lese Text …");
+      const text = await leseTextRobust(d.file);
+      if (/\.(md|markdown)$/i.test(d.file.name)) return mdKopf(d, text);
+      return mdKopf(d, absaetzeZuMd(textZuAbsaetze(text, false)));
+    }
+    case "bild": {
+      const worker = await holeOcrWorker(st);
+      st("Erkenne Text im Bild …");
+      const { img, url } = await ladeBild(d.file);
+      const canvas = bildAufCanvas(img, true);
+      URL.revokeObjectURL(url);
+      const { data } = await worker.recognize(canvas);
+      const text = absaetzeZuMd(textZuAbsaetze((data.text || "").trim(), false));
+      return mdKopf(d, text, "per OCR erkannt — bitte gegenlesen");
+    }
+    default:
+      throw new Error("Dieses Format kann nicht nach Markdown umgewandelt werden.");
+  }
+}
+
+async function zuMarkdownDatei(d, row) {
+  try {
+    const md = await markdownFuer(d, t => setStatus(row, t, "laeuft"));
+    zeigeErgebnis(row, new Blob([md], { type: "text/markdown;charset=utf-8" }),
+      basisname(d.file.name) + ".md", "fertig zum Hochladen ins Projektwissen");
+  } catch (err) {
+    setStatus(row, "Fehler: " + fehlermeldung(err), "fehler");
+  }
+}
+
+/** Überschriften um eine Ebene tiefer setzen (# → ##), Codeblöcke auslassen. */
+function ueberschriftenTiefer(md) {
+  let imCode = false;
+  return md.split("\n").map(z => {
+    if (/^\s*```/.test(z)) imCode = !imCode;
+    if (!imCode && /^#{1,5} /.test(z)) return "#" + z;
+    return z;
+  }).join("\n");
+}
+
+async function alleZuMarkdown(liste) {
+  const st = t => { sammelStatus.className = "status laeuft"; sammelStatus.textContent = t; };
+  try {
+    const teile = [], fehler = [];
+    for (let i = 0; i < liste.length; i++) {
+      const d = liste[i];
+      const vorsatz = "(" + (i + 1) + "/" + liste.length + ") " + d.file.name + ": ";
+      try {
+        teile.push(ueberschriftenTiefer(await markdownFuer(d, t => st(vorsatz + t))).trim());
+      } catch (err) {
+        fehler.push(d.file.name);
+        teile.push("## " + basisname(d.file.name) + "\n\n> Konnte nicht gelesen werden: " + fehlermeldung(err));
+      }
+    }
+    const datum = new Date().toLocaleDateString("de-DE");
+    const inhalt = liste.map((d, i) => (i + 1) + ". " + d.file.name).join("\n");
+    const md = "# Projektwissen\n\n> " + liste.length + " Dateien · zusammengestellt am " + datum +
+      "\n\n**Enthaltene Dateien:**\n\n" + inhalt + "\n\n---\n\n" + teile.join("\n\n---\n\n") + "\n";
+    sammelStatus.className = "status";
+    sammelStatus.textContent = "";
+    zeigeErgebnis(sammelErgebnis, new Blob([md], { type: "text/markdown;charset=utf-8" }),
+      "projektwissen.md",
+      fehler.length ? fehler.length + " Datei(en) nicht lesbar — im Dokument markiert" : "alle Dateien in einer Datei");
+  } catch (err) {
+    sammelStatus.className = "status fehler";
+    sammelStatus.textContent = "Fehler: " + fehlermeldung(err);
   }
 }
 
